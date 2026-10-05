@@ -397,6 +397,13 @@ static void faustgen_tilde_compile(t_faustgen_tilde *x)
             x->f_dsp_factory  = factory;
             x->f_dsp_instance = instance;
 
+            /* Register after the JIT initializes its lazy static mutexes. */
+            static int exit_cleanup_registered = 0;
+            if (!exit_cleanup_registered) {
+                atexit(deleteAllCDSPFactories);
+                exit_cleanup_registered = 1;
+            }
+
             if (faust_ui_manager_get_polyphony(x->f_ui_manager, &midi, &npoly,
                                                &freq, &gain, &gate)) {
               faust_new_voices(x, npoly);
@@ -494,7 +501,7 @@ static void faustgen_tilde_menu_open(t_faustgen_tilde *x)
     if (nw_gui_vmess)
       nw_gui_vmess("open_textfile", "s", pathname);
     else
-      sys_vgui("::pd_menucommands::menu_openfile {%s}\n", pathname);
+      pdgui_vmess("::pd_menucommands::menu_openfile", "s", pathname);
   } else {
     pd_error(x, "faustgen2~: no FAUST DSP file defined");
   }
@@ -1173,7 +1180,7 @@ static t_int *faustgen_tilde_perform_single(t_int *w)
       t_outlet *out = x->f_midiout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
       faust_ui_manager_midiout(x->f_ui_manager, x->f_midichan, x->f_midirecv, out);
     }
-    if (clock_getsystime() >= x->f_next_tick) {
+    if (clock_getlogicaltime() >= x->f_next_tick) {
       if (x->f_oscout || x->f_oscrecv) {
         t_outlet *out = x->f_oscout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
         faust_ui_manager_oscout(x->f_ui_manager, x->f_oscrecv, out);
@@ -1249,7 +1256,7 @@ static t_int *faustgen_tilde_perform_double(t_int *w)
       t_outlet *out = x->f_midiout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
       faust_ui_manager_midiout(x->f_ui_manager, x->f_midichan, x->f_midirecv, out);
     }
-    if (clock_getsystime() >= x->f_next_tick) {
+    if (clock_getlogicaltime() >= x->f_next_tick) {
       if (x->f_oscout || x->f_oscrecv) {
         t_outlet *out = x->f_oscout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
         faust_ui_manager_oscout(x->f_ui_manager, x->f_oscrecv, out);
