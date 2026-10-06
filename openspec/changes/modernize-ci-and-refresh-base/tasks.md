@@ -18,12 +18,12 @@
 ## 3. macOS arm64 job
 
 - [x] 3.1 Add the macOS job on `macos-15`: `brew install llvm`, configure with `LLVM_DIR=$(brew --prefix)/opt/llvm/lib/cmake/llvm`, build, staged install — verify: job green on a push-triggered run
-- [ ] 3.2 Bundle Homebrew LLVM dylibs into `faustgen2~` and rewrite their install names to `@loader_path`, reusing the existing `otool`/`install_name_tool` loop with the new prefix — verify: the job's `otool -L` output shows no `$(brew --prefix)` references for non-system dylibs, and `lipo -archs` reports `arm64`
+- [x] 3.2 Bundle Homebrew LLVM dylibs into `faustgen2~` and rewrite their install names to `@loader_path`, reusing the existing `otool`/`install_name_tool` loop with the new prefix — verify: the job's `otool -L` output shows no `$(brew --prefix)` references for non-system dylibs, and `lipo -archs` reports `arm64`
 - [x] 3.3 Upload as `pd-faustgen2-<version>-macos-arm64` with `retention-days: 7` — verify: artifact present and named per spec
 
 ## 4. Windows x64 job
 
-- [ ] 4.1 Add the Windows job on `windows-2025` with `shell: bash`: first assert LLVM usability — `llvm-config --version` runs and an `LLVMConfig.cmake` exists (install via the image's package manager if not) — verify: the assertion step passes on a real run
+- [ ] 4.1 Add the Windows job on `windows-2025` with `shell: bash`: provision LLVM the way `grame-cncm/faust`'s `libfaust.yml` Windows job does — download the pinned `llvm-17.0.6-win11-x86_64.zip` from grame-cncm/faust release assets, verify its SHA-256, `7z` extract, put `llvm-config` on `PATH` — then assert LLVM usability (`llvm-config --version` runs and an `LLVMConfig.cmake` exists) — verify: the assertion step passes on a real run
 - [ ] 4.2 Configure with a Visual Studio generator available on the image (VS 17+ x64) plus `-DLLVM_DIR`, build Release, staged install — verify: job green and `faustgen2~.dll` produced
 - [ ] 4.3 Upload as `pd-faustgen2-<version>-windows-x86_64` with `retention-days: 7` — verify: artifact present and named per spec
 
@@ -35,7 +35,7 @@
 ## 6. Acceptance: full matrix + local immutable Linux
 
 - [ ] 6.1 Trigger the workflow manually via `workflow_dispatch` — verify: all four jobs (Linux, macOS, Windows, tarball) are green in a single run
-- [ ] 6.2 Download `pd-faustgen2-<version>-ubuntu-x86_64`, place its `faustgen2~` folder on the Pd external search path of the local immutable Linux machine — verify: `faustgen2~-help.pd` opens with every object resolved and **zero warnings on the Pd console**; record the distro, Pd version, and precision (float/double) as evidence
-- [ ] 6.3 Run `tests/location.pd` and `tests/recompile.pd` — verify: the dsp compiles through the JIT, audio is produced, and an in-session recompile succeeds
-- [ ] 6.4 Quit Pd after compiling at least one dsp — verify: Pd exits with status 0, no crash report, no static-destruction fault (the PR #5 behavior)
-- [ ] 6.5 If load-time warnings appear that are unrelated to PR #5's exit fix, stop and capture the exact console output for a separate change — verify: evidence recorded in the change notes rather than absorbed silently
+- [x] 6.2 Download `pd-faustgen2-<version>-ubuntu-x86_64`, place its `faustgen2~` folder on the Pd external search path of the local immutable Linux machine — evidence: run 37444217542 ubuntu artifact on Bluefin 44 / Pd 0.57.0 (float32, x86_64): help patch opens, 18 objects resolved, exit 0, zero console warnings; ldd shows no LLVM/xml2/z3 deps — verify: `faustgen2~-help.pd` opens with every object resolved and **zero warnings on the Pd console**; record the distro, Pd version, and precision (float/double) as evidence
+- [x] 6.3 Run `tests/location.pd` and `tests/recompile.pd` — evidence: CI artifact, JACK2/2ch, faustgen2~ location(0/1) and recompile(1/2) JIT-compiled, mid-run dsp edit triggered the 2nd compile, exit 0 — verify: the dsp compiles through the JIT, audio is produced, and an in-session recompile succeeds
+- [x] 6.4 Quit Pd after compiling at least one dsp — evidence: both CI-artifact runs exited 0 after JIT compiles; coredumpctl shows no pd core (only an unrelated 2026-10-02 gnome-shell) — verify: Pd exits with status 0, no crash report, no static-destruction fault (the PR #5 behavior)
+- [x] 6.5 If load-time warnings appear that are unrelated to PR #5's exit fix, stop and capture the exact console output for a separate change — evidence: normal-mode console has zero warnings; -verbose surfaces 12 class-overwrite notices from the flatpak Pd's own zexy/cyclone bundle (lines 37-91 of ~/faustgen-acceptance/63-tests.log), unrelated to the external and to PR #5; environment noise, kept out of this change — verify: evidence recorded in the change notes rather than absorbed silently
