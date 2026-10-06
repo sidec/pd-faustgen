@@ -8,7 +8,7 @@
 
 - [x] 2.1 Change `.gitmodules` `pd.build` URL to `https://github.com/sidec/pd.build.git` and bump the pin to the task 1.2 regeneration commit — verify: `git submodule status pd.build` shows the new sha and `grep pdgui_vmess pd.build/x64/pd.def` succeeds
 - [x] 2.2 Remove the `pd-import-library` step and the `-DPD_LIBRARY="$PD_LIBRARY"` argument from `.github/workflows/makefile.yml` — verify: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/makefile.yml'))"` passes and `grep -c 'msp.ucsd.edu\|pd-import-library\|PD_LIBRARY' .github/workflows/makefile.yml` is 0
-- [ ] 2.3 Dispatch `windows_only=true` and verify the Windows job is green without the derivation step — verify: run green, log shows no `pd-import-library` step and the link resolves against `pd.build/x64/pd.lib`
+- [x] 2.3 Dispatch `windows_only=true` and verify the Windows job is green without the derivation step — verify: run green, log shows no `pd-import-library` step and the link resolves against `pd.build/x64/pd.lib`
 
 ## 3. Acceptance
 
