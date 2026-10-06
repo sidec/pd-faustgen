@@ -181,7 +181,9 @@ if(APPLE)
 endif()
 
 if(MSVC)
-    set_property(TARGET faustgen_tilde_project APPEND_STRING PROPERTY LINK_FLAGS " /ignore:4099 ")
+    ## faust appends llvm-config --system-libs (e.g. xml2s.lib) to its link
+    ## libraries as bare names, so LLVM's own lib dir must be on LIBPATH.
+    set_property(TARGET faustgen_tilde_project APPEND_STRING PROPERTY LINK_FLAGS " /ignore:4099 /LIBPATH:\"${LLVM_DIR}/../..\"")
 endif()
 
 ## Installation directory. This is relative to CMAKE_INSTALL_PREFIX.
