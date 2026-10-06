@@ -23,9 +23,9 @@
 
 ## 4. Windows x64 job
 
-- [ ] 4.1 Add the Windows job on `windows-2025` with `shell: bash`: provision LLVM the way `grame-cncm/faust`'s `libfaust.yml` Windows job does — download the pinned `llvm-17.0.6-win11-x86_64.zip` from grame-cncm/faust release assets, verify its SHA-256, `7z` extract, put `llvm-config` on `PATH` — then assert LLVM usability (`llvm-config --version` runs and an `LLVMConfig.cmake` exists) — verify: the assertion step passes on a real run
-- [ ] 4.2 Configure with a Visual Studio generator available on the image (VS 17+ x64) plus `-DLLVM_DIR`, build Release, staged install — verify: job green and `faustgen2~.dll` produced
-- [ ] 4.3 Upload as `pd-faustgen2-<version>-windows-x86_64` with `retention-days: 7` — verify: artifact present and named per spec
+- [x] 4.1 Add the Windows job on `windows-2025` with `shell: bash`: provision LLVM the way `grame-cncm/faust`'s `libfaust.yml` Windows job does — download the pinned `llvm-17.0.6-win11-x86_64.zip` from grame-cncm/faust release assets, verify its SHA-256, `7z` extract, put `llvm-config` on `PATH` — then assert LLVM usability (`llvm-config --version` runs and an `LLVMConfig.cmake` exists) — verify: the assertion step passes on a real run
+- [x] 4.2 Configure with a Visual Studio generator available on the image (VS 17+ x64) plus `-DLLVM_DIR`, build Release, staged install — verify: job green and `faustgen2~.dll` produced
+- [x] 4.3 Upload as `pd-faustgen2-<version>-windows-x86_64` with `retention-days: 7` — verify: artifact present and named per spec
 
 ## 5. Source tarball + tag release
 
