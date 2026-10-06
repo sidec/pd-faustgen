@@ -188,15 +188,12 @@ jobs:
         if ! assert_llvm; then
           echo "== choco install script =="
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "A: permissive ACL + wipe"
-          powershell -NoProfile -Command 'Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LLVM","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item "C:\Program Files\LLVM" -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force "C:\Program Files\LLVM" | Out-Null; icacls "C:\Program Files\LLVM" /grant "*S-1-1-0:(OI)(CI)F" /T /C | Out-Null; "prepared"'
-          echo "B: winget MSI install with verbose log"
-          timeout 600 winget install --id LLVM.LLVM -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity --installer-arguments "/l*v C:\llvm-msi.log"; echo "winget_exit=$?"
-          echo "C: verify"
-          powershell -NoProfile -Command '$r="C:\Program Files\LLVM"; "total=$(@(Get-ChildItem $r -Recurse -Force -File -EA SilentlyContinue).Count)"; "llvm-config=$(Test-Path "$r\bin\llvm-config.exe")"; "cmake=$(Test-Path "$r\lib\cmake\llvm\LLVMConfig.cmake")"; "coreh=$(Test-Path "$r\include\llvm-c\Core.h")"'
-          echo "D: MSI log errors"
-          powershell -NoProfile -Command 'if (Test-Path C:\llvm-msi.log) { "logsize=$((Get-Item C:\llvm-msi.log).Length)"; Select-String -Path C:\llvm-msi.log -Pattern "Access is denied|return value 3|0x80070005|Installation operation failed|Note: " | Select-Object -First 25 | ForEach-Object Line } else { "no log" }'
-          echo "E: MSI file actions for llvm-config"
+          echo "P1: search VS trees for llvm-config.exe + LLVMConfig.cmake"
+          powershell -NoProfile -Command 'foreach ($root in @("C:\Program Files\Microsoft Visual Studio","C:\Program Files (x86)\Microsoft Visual Studio")) { if (Test-Path $root) { Get-ChildItem $root -Recurse -Force -Filter "llvm-config.exe" -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object FullName; Get-ChildItem $root -Recurse -Force -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object FullName } }' || true
+          echo "P2: VS bundled Clang/LLVM toolset layout"
+          powershell -NoProfile -Command 'Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\Llvm\x64" -Force -ErrorAction SilentlyContinue | ForEach-Object Name; "-- llvm* in bin --"; Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\Llvm\x64\bin" -Force -ErrorAction SilentlyContinue | Where-Object Name -like "llvm*" | Select-Object -First 25 | ForEach-Object Name; "-- cmake? --"; Test-Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\Llvm\x64\lib\cmake\llvm\LLVMConfig.cmake"' || true
+          echo "P3: bounded sweep of Program Files trees"
+          powershell -NoProfile -Command 'foreach ($root in @("C:\Program Files","C:\Program Files (x86)")) { Get-ChildItem $root -Recurse -Force -Include "llvm-config.exe","LLVMConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object FullName }' || true
           powershell -NoProfile -Command 'if (Test-Path C:\llvm-msi.log) { Select-String -Path C:\llvm-msi.log -Pattern "llvm-config|LLVMConfig.cmake|Core.h" | Select-Object -First 20 | ForEach-Object Line }' 
         fi
         echo "EVIDENCE-ONLY RUN (assert skipped)"
