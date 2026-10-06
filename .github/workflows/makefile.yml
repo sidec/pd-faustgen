@@ -153,8 +153,9 @@ jobs:
         echo "version=$(git describe --tags)" >> $GITHUB_ENV
 
     # Assert that the runner's LLVM is actually usable for our build: we need
-    # both llvm-config and LLVMConfig.cmake. If not, install LLVM via the
-    # image's package manager (choco) and check again.
+    # both llvm-config and LLVMConfig.cmake. The image's install is
+    # tools-only, so fall back to installing LLVM via the image's package
+    # manager (choco) and check again.
 
     - name: prepare
       run: |
@@ -165,23 +166,14 @@ jobs:
           cmakedir="$(llvm-config --cmakedir)"
         fi
         if [ -z "$cmakedir" ] || [ ! -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake" ]; then
-          # The image's LLVM is a tools-only install: no llvm-config, no dev
-          # files. Fetch the official full dev distribution instead.
-          echo "runner LLVM not usable, installing LLVM from the official dev tarball"
-          TMPD="$(cygpath -u "$RUNNER_TEMP")"
-          # extract with relative paths: bsdtar misparses "D:\..." as host:path
-          curl -fL -o "$TMPD/llvm.tar.xz" "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz"
-          mkdir -p "$TMPD/llvm"
-          cd "$TMPD" && tar -C llvm --strip-components=1 -xf llvm.tar.xz && rm -f llvm.tar.xz
-          cd - >/dev/null
-          # evidence: where does xml2s.lib (faust's system-libs link input) live?
-          ls "$TMPD/llvm/lib/"xml2* 2>&1 || echo "xml2s.lib not in tarball lib/"
-          ls "/c/Program Files/LLVM/lib/"xml2* 2>&1 || echo "xml2s.lib not in image LLVM"
-          # PATH changes don't survive between steps: use GITHUB_PATH, in
-          # Windows form so that native cmake/find_program can use it
-          echo "$(cygpath -m "$TMPD/llvm/bin")" >> "$GITHUB_PATH"
-          export PATH="$TMPD/llvm/bin:$PATH"
-          cmakedir="$(cygpath -m "$TMPD/llvm/lib/cmake/llvm")"
+          echo "runner LLVM not usable, installing LLVM via choco"
+          ls "/c/Program Files/LLVM" || true
+          choco install llvm -y --no-progress
+          export PATH="/c/Program Files/LLVM/bin:$PATH"
+          cmakedir="$(cygpath -m "/c/Program Files/LLVM/lib/cmake/llvm")"
+          if command -v llvm-config >/dev/null 2>&1; then
+            cmakedir="$(llvm-config --cmakedir)"
+          fi
         fi
         echo "llvm-config: $(command -v llvm-config)"
         llvm-config --version
@@ -189,8 +181,12 @@ jobs:
         # llvm-config prints native Windows paths; test(1) needs the MSYS form
         test -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake"
         echo "LLVM_DIR=$cmakedir" >> $GITHUB_ENV
-        # llvm-config must stay on PATH for the configure step (faust's build uses it)
-        echo "$(dirname "$(command -v llvm-config)")" >> $GITHUB_PATH
+        # llvm-config must stay on PATH for the configure step (faust's build
+        # uses it); GITHUB_PATH needs the Windows form so native cmake sees it
+        echo "$(cygpath -m "$(dirname "$(command -v llvm-config)")")" >> "$GITHUB_PATH"
+        # evidence: what faust appends to the link line, and where xml2 lives
+        llvm-config --system-libs || true
+        ls "$(cygpath -u "$cmakedir")/../../lib/"xml2* 2>/dev/null || echo "no xml2* in LLVM lib dir"
 
     - name: make
       run: |
