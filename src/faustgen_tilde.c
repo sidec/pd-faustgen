@@ -14,10 +14,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
-// This used to be in s_stuff.h, but not anymore since 0.55.1test1.
-int sys_trytoopenone(const char *dir, const char *name, const char* ext,
-    char *dirresult, char **nameresult, unsigned int size, int bin);
-
 // ag: I'm not sure what this definition is supposed to do, but this will
 // almost certainly cause trouble when compiling against a Pd version that
 // uses double precision t_sample values. Disabled for now, which means that
@@ -1656,8 +1652,8 @@ static int faustgen_loader_pathwise
   // We allow a ~ to be tacked on to the dsp name, so compute the real name of
   // the dsp file here.
   t_symbol *s = real_dsp_name(gensym(name));
-  fd = sys_trytoopenone(path, s->s_name, ".dsp",
-                        dirbuf, &ptr, MAXPDSTRING, 1);
+  fd = open_via_path(path, s->s_name, ".dsp",
+                     dirbuf, &ptr, MAXPDSTRING, 1);
   if (fd >= 0) {
     // the actual loading, compiling etc. is done in the class setup
     sys_close(fd);
