@@ -188,14 +188,18 @@ jobs:
         if ! assert_llvm; then
           echo "== choco install script =="
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "== writability probe =="
-          touch "/c/Program Files/LLVM/bin/__probe" 2>&1 && { echo WRITABLE; rm -f "/c/Program Files/LLVM/bin/__probe"; } || echo NOTWRITABLE
-          icacls "C:\Program Files\LLVM" 2>&1 | head -8
-          echo "== uninstall attempt (wait for removal) =="
-          "/c/Program Files/LLVM/Uninstall.exe" /S || true
-          for i in $(seq 1 12); do sleep 5; [ ! -d "/c/Program Files/LLVM" ] && break; done
-          ls "/c/Program Files/LLVM" 2>&1 || echo "LLVM dir removed"
-          echo "== choco install =="
+          echo "== uninstall exit code =="
+          "/c/Program Files/LLVM/Uninstall.exe" /S; echo "uninstall_exit=$?"
+          echo "== NSIS install dir in registry =="
+          reg query "HKLM\SOFTWARE\LLVM" /s 2>&1 | head -15 || true
+          reg query "HKLM\SOFTWARE\WOW6432Node\LLVM" /s 2>&1 | head -15 || true
+          echo "== llvm dirs on C: (depth 3) =="
+          find /c -maxdepth 3 -type d -iname "*llvm*" 2>/dev/null | head -20
+          echo "== wiping registry uninstall keys + dir =="
+          reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" /f 2>&1 || true
+          reg delete "HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" /f 2>&1 || true
+          rm -rf "/c/Program Files/LLVM" && echo "dir wiped" || echo "wipe failed"
+          echo "== choco fresh install =="
           choco install llvm -y --no-progress --force
           export PATH="/c/Program Files/LLVM/bin:$PATH"
           echo "bin entries after: $(ls "/c/Program Files/LLVM/bin" 2>/dev/null | wc -l)"
