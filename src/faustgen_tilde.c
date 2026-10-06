@@ -1458,13 +1458,24 @@ static t_symbol *real_dsp_name(t_symbol *s)
   return gensym(buf);
 }
 
+// Loader-created classes are registered under the dsp name, while the
+// external itself is registered under "faustgen2~" -- possibly written
+// with a directory prefix (e.g. "../external/faustgen2~"), in which case
+// the dsp name still comes from the first creation argument.
+static bool is_faustgen_classname(const char *n)
+{
+  static const char cls[] = "faustgen2~";
+  size_t l = strlen(n);
+  return l >= sizeof(cls) - 1 && strcmp(n + l - (sizeof(cls) - 1), cls) == 0;
+}
+
 static void *faustgen_tilde_new(t_symbol* s, int argc, t_atom* argv)
 {
     t_faustgen_tilde* x = (t_faustgen_tilde *)pd_new(faustgen_tilde_class);
     if(x)
     {
         char default_file[MAXPDSTRING];
-        bool is_loader_obj = strcmp(s->s_name, "faustgen2~") != 0;
+        bool is_loader_obj = !is_faustgen_classname(s->s_name);
         x->f_canvas = canvas_getcurrent();
         sprintf(default_file, "%s/default", class_gethelpdir(faustgen_tilde_class));
         x->f_dsp_factory    = NULL;
