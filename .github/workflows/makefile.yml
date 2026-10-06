@@ -42,14 +42,14 @@ jobs:
         cd dist/faustgen2~
         for x in $(otool -L faustgen2~.pd_darwin | sed 's/^ *//' | awk 'NR>1 {print $1}'); do
           case "$x" in
-            /usr/*|/System/*|@*|faustgen2~.pd_darwin) continue ;;
+            /usr/*|/System/*|@*|*faustgen2~.pd_darwin) continue ;;
           esac
           echo "bundling: $x"
           cp -f "$x" .
           install_name_tool -change "$x" "@loader_path/$(basename "$x")" faustgen2~.pd_darwin
         done
         cd ../..
-        cp README.md LICENSE dist/faustgen2~/
+        cp ../README.md ../LICENSE dist/faustgen2~/
         chmod 0444 dist/faustgen2~/default.dsp
 
     - name: upload
