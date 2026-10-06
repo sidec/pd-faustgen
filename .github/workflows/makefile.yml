@@ -161,22 +161,23 @@ jobs:
       run: |
         set -e
         export PATH="/c/Program Files/LLVM/bin:$PATH"
-        cmakedir=""
-        if command -v llvm-config >/dev/null 2>&1 && llvm-config --version >/dev/null 2>&1; then
-          cmakedir="$(llvm-config --cmakedir)"
-        fi
-        if [ -z "$cmakedir" ] || [ ! -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake" ]; then
-          echo "runner LLVM not usable, installing LLVM via choco"
-          ls "/c/Program Files/LLVM" || true
-          choco install llvm -y --no-progress
+        assert_llvm() {
+          command -v llvm-config >/dev/null 2>&1 &&
+            llvm-config --version >/dev/null 2>&1 &&
+            [ -f "$(cygpath -u "$(llvm-config --cmakedir)")/LLVMConfig.cmake" ]
+        }
+        if ! assert_llvm; then
+          echo "== image LLVM layout =="
+          ls "/c/Program Files/LLVM/bin" | head -50 || true
+          find "/c/Program Files/LLVM" \( -name "llvm-config*" -o -name "LLVMConfig.cmake" \) -print | head -10 || true
+          echo "reinstalling LLVM via choco --force"
+          choco install llvm -y --no-progress --force
           export PATH="/c/Program Files/LLVM/bin:$PATH"
-          cmakedir="$(cygpath -m "/c/Program Files/LLVM/lib/cmake/llvm")"
-          if command -v llvm-config >/dev/null 2>&1; then
-            cmakedir="$(llvm-config --cmakedir)"
-          fi
         fi
+        assert_llvm || { echo "LLVM still unusable after choco"; exit 1; }
         echo "llvm-config: $(command -v llvm-config)"
         llvm-config --version
+        cmakedir="$(llvm-config --cmakedir)"
         echo "cmakedir: $cmakedir"
         # llvm-config prints native Windows paths; test(1) needs the MSYS form
         test -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake"
