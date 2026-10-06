@@ -137,16 +137,21 @@ jobs:
       run: |
         set -e
         export PATH="/c/Program Files/LLVM/bin:$PATH"
-        if ! command -v llvm-config >/dev/null 2>&1 || ! llvm-config --version >/dev/null 2>&1 || [ ! -f "$(llvm-config --cmakedir 2>/dev/null || true)/LLVMConfig.cmake" ]; then
-          echo "runner LLVM not usable, installing via choco"
+        cmakedir=""
+        if command -v llvm-config >/dev/null 2>&1 && llvm-config --version >/dev/null 2>&1; then
+          cmakedir="$(llvm-config --cmakedir)"
+        fi
+        if [ -z "$cmakedir" ] || [ ! -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake" ]; then
+          echo "runner LLVM not usable (llvm-config: '$(command -v llvm-config || true)', cmakedir: '$cmakedir'), installing via choco"
           choco install -y llvm || true
           export PATH="/c/Program Files/LLVM/bin:$PATH"
+          cmakedir="$(llvm-config --cmakedir)"
         fi
-        echo "llvm-config: $(which llvm-config)"
+        echo "llvm-config: $(command -v llvm-config)"
         llvm-config --version
-        cmakedir="$(llvm-config --cmakedir)"
         echo "cmakedir: $cmakedir"
-        test -f "$cmakedir/LLVMConfig.cmake"
+        # llvm-config prints native Windows paths; test(1) needs the MSYS form
+        test -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake"
         echo "LLVM_DIR=$cmakedir" >> $GITHUB_ENV
 
     - name: make
