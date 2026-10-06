@@ -181,14 +181,18 @@ jobs:
         if ! assert_llvm; then
           echo "== choco install script =="
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "== install locations (HKCU/HKLM) =="
-          powershell -NoProfile -Command 'Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "LLVM*" -or $_.Publisher -like "*LLVM*" } | Format-List DisplayName,DisplayVersion,InstallLocation,DisplayIcon,UninstallString'
-          echo "== users search =="
-          find /c/Users -maxdepth 7 \( -name llvm-config.exe -o -name LLVMConfig.cmake \) -print 2>/dev/null | head -10 || true
-          echo "== anything under Program Files/LLVM written today =="
-          find "/c/Program Files/LLVM" -newermt "2026-10-06" -print 2>/dev/null | head -20 || true
-          echo "== AppData Local Programs =="
-          ls "/c/Users/runneradmin/AppData/Local/Programs" 2>/dev/null || true
+          echo "== writability probe =="
+          touch "/c/Program Files/LLVM/bin/__probe" 2>&1 && { echo WRITABLE; rm -f "/c/Program Files/LLVM/bin/__probe"; } || echo NOTWRITABLE
+          icacls "C:\Program Files\LLVM" 2>&1 | head -8
+          echo "== uninstall attempt (wait for removal) =="
+          "/c/Program Files/LLVM/Uninstall.exe" /S || true
+          for i in $(seq 1 12); do sleep 5; [ ! -d "/c/Program Files/LLVM" ] && break; done
+          ls "/c/Program Files/LLVM" 2>&1 || echo "LLVM dir removed"
+          echo "== choco install =="
+          choco install llvm -y --no-progress --force
+          export PATH="/c/Program Files/LLVM/bin:$PATH"
+          echo "bin entries after: $(ls "/c/Program Files/LLVM/bin" 2>/dev/null | wc -l)"
+          llvm_diag
         fi
         assert_llvm || { echo "LLVM still unusable"; exit 1; }
         echo "llvm-config: $(command -v llvm-config)"
