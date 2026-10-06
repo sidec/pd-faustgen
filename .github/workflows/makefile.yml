@@ -188,9 +188,16 @@ jobs:
         if ! assert_llvm; then
           echo "== choco install script =="
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "X1: deep fingerprint of image LLVM tree"
-          powershell -NoProfile -Command '$r="C:\Program Files\LLVM"; "== include files =="; Get-ChildItem "$r\include" -Recurse -Force -File -EA SilentlyContinue | ForEach-Object { $_.FullName.Substring($r.Length+1) }; "== reparse points =="; Get-ChildItem $r -Recurse -Force -EA SilentlyContinue | Where-Object { $_.Attributes -match "ReparsePoint" } | ForEach-Object { "$($_.FullName.Substring($r.Length+1)) -> $($_.Target)" }; "== bin names =="; Get-ChildItem "$r\bin" -Force | ForEach-Object Name; "== lib top =="; Get-ChildItem "$r\lib" -Force -EA SilentlyContinue | Select-Object -First 25 | ForEach-Object { $_.Name + $(if($_.PSIsContainer){"/"}) }; "== cmake tree =="; Get-ChildItem "$r\lib\cmake" -Recurse -Force -EA SilentlyContinue | ForEach-Object { $_.FullName.Substring($r.Length+1) } | Select-Object -First 30; "== who owns the dir =="; (Get-Acl $r).Owner; "== du =="; "{0:N0} bytes" -f (Get-ChildItem $r -Recurse -Force -File -EA SilentlyContinue | Measure-Object Length -Sum).Sum'
-          echo "SKIP-INSTALL-THIS-RUN"
+          echo "A: permissive ACL + wipe"
+          powershell -NoProfile -Command 'Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LLVM","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item "C:\Program Files\LLVM" -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force "C:\Program Files\LLVM" | Out-Null; icacls "C:\Program Files\LLVM" /grant "*S-1-1-0:(OI)(CI)F" /T /C | Out-Null; "prepared"'
+          echo "B: winget MSI install with verbose log"
+          timeout 600 winget install --id LLVM.LLVM -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity --installer-arguments "/l*v C:\llvm-msi.log"; echo "winget_exit=$?"
+          echo "C: verify"
+          powershell -NoProfile -Command '$r="C:\Program Files\LLVM"; "total=$(@(Get-ChildItem $r -Recurse -Force -File -EA SilentlyContinue).Count)"; "llvm-config=$(Test-Path "$r\bin\llvm-config.exe")"; "cmake=$(Test-Path "$r\lib\cmake\llvm\LLVMConfig.cmake")"; "coreh=$(Test-Path "$r\include\llvm-c\Core.h")"'
+          echo "D: MSI log errors"
+          powershell -NoProfile -Command 'if (Test-Path C:\llvm-msi.log) { "logsize=$((Get-Item C:\llvm-msi.log).Length)"; Select-String -Path C:\llvm-msi.log -Pattern "Access is denied|return value 3|0x80070005|Installation operation failed|Note: " | Select-Object -First 25 | ForEach-Object Line } else { "no log" }'
+          echo "E: MSI file actions for llvm-config"
+          powershell -NoProfile -Command 'if (Test-Path C:\llvm-msi.log) { Select-String -Path C:\llvm-msi.log -Pattern "llvm-config|LLVMConfig.cmake|Core.h" | Select-Object -First 20 | ForEach-Object Line }' 
         fi
         echo "EVIDENCE-ONLY RUN (assert skipped)"
         echo "llvm-config: $(command -v llvm-config)"
