@@ -181,21 +181,17 @@ jobs:
         if ! assert_llvm; then
           echo "== choco install script =="
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "bin entries before: $(ls "/c/Program Files/LLVM/bin" 2>/dev/null | wc -l)"
-          if [ -x "/c/Program Files/LLVM/Uninstall.exe" ]; then
-            echo "silently removing the incomplete LLVM install first"
-            "/c/Program Files/LLVM/Uninstall.exe" /S || true
-            sleep 15
-          fi
-          ls "/c/Program Files/LLVM" 2>&1 || echo "LLVM dir removed"
-          echo "installing LLVM via choco --force"
-          choco install llvm -y --no-progress --force
-          export PATH="/c/Program Files/LLVM/bin:$PATH"
-          echo "bin entries after: $(ls "/c/Program Files/LLVM/bin" 2>/dev/null | wc -l)"
-          find "/c/Program Files/LLVM" \( -name "llvm-config.exe" -o -name "LLVMConfig.cmake" \) -print 2>/dev/null | head -5 || true
-          llvm_diag
+          echo "== registry =="
+          powershell -NoProfile -Command "Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object {$_.DisplayName -like 'LLVM*'} | Format-List DisplayName,InstallLocation,DisplayIcon" 2>&1 | head -20
+          echo "== disks =="
+          df -h /c /d 2>&1 | tail -3
+          echo "== targeted search =="
+          ls /d 2>/dev/null | head -20
+          find /d -maxdepth 5 -name "llvm-config.exe" -print 2>/dev/null | head -5 || true
+          find "/c/Program Files/LLVM" -maxdepth 4 \( -name "llvm-config.exe" -o -name "LLVMConfig.cmake" \) -print 2>/dev/null || true
+          ls "/c/Program Files/LLVM/bin" | head -100 | tail -50
         fi
-        assert_llvm || { echo "LLVM still unusable after choco"; exit 1; }
+        assert_llvm || { echo "LLVM still unusable"; exit 1; }
         echo "llvm-config: $(command -v llvm-config)"
         llvm-config --version
         cmakedir="$(llvm-config --cmakedir)"
