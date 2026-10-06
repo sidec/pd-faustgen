@@ -181,15 +181,16 @@ jobs:
         if ! assert_llvm; then
           echo "== choco install script =="
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "== registry =="
-          powershell -NoProfile -Command "Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object {$_.DisplayName -like 'LLVM*'} | Format-List DisplayName,InstallLocation,DisplayIcon" 2>&1 | head -20
-          echo "== disks =="
-          df -h /c /d 2>&1 | tail -3
+          echo "== registry keys matching LLVM =="
+          reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" /s /f "LLVM" /k 2>&1 | head -15 || true
+          reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" /v InstallLocation 2>&1 || true
+          reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" /v InstallLocation 2>&1 || true
+          echo "== bin file timestamps (are they fresh?) =="
+          ls -la --time-style=+%Y-%m-%d "/c/Program Files/LLVM/bin" | head -8
+          echo "files dated today: $(find "/c/Program Files/LLVM/bin" -maxdepth 1 -newermt "2026-10-06" | wc -l)"
           echo "== targeted search =="
-          ls /d 2>/dev/null | head -20
           find /d -maxdepth 5 -name "llvm-config.exe" -print 2>/dev/null | head -5 || true
           find "/c/Program Files/LLVM" -maxdepth 4 \( -name "llvm-config.exe" -o -name "LLVMConfig.cmake" \) -print 2>/dev/null || true
-          ls "/c/Program Files/LLVM/bin" | head -100 | tail -50
         fi
         assert_llvm || { echo "LLVM still unusable"; exit 1; }
         echo "llvm-config: $(command -v llvm-config)"
