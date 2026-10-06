@@ -64,6 +64,8 @@ jobs:
         done
         # install_name_tool invalidates the arm64 code signature
         codesign -f -s - *.dylib faustgen2~.pd_darwin
+        echo "=== lipo -archs ==="
+        lipo -archs faustgen2~.pd_darwin
         echo "=== otool -L faustgen2~.pd_darwin ==="
         otool -L faustgen2~.pd_darwin
         cd ../..
@@ -172,6 +174,8 @@ jobs:
           mkdir -p "$TMPD/llvm"
           cd "$TMPD" && tar -C llvm --strip-components=1 -xf llvm.tar.xz && rm -f llvm.tar.xz
           cd - >/dev/null
+          # PATH changes don't survive between steps: use GITHUB_PATH
+          echo "$TMPD/llvm/bin" >> "$GITHUB_PATH"
           export PATH="$TMPD/llvm/bin:$PATH"
           cmakedir="$(cygpath -m "$TMPD/llvm/lib/cmake/llvm")"
         fi
