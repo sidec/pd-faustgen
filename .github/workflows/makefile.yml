@@ -190,17 +190,14 @@ jobs:
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
           echo "A: uninstall"
           timeout 30 "/c/Program Files/LLVM/Uninstall.exe" /S; echo "uninstall_exit=$?"
-          echo "B: registry"
-          reg query "HKLM\SOFTWARE\LLVM" /s 2>&1 | head -15 || true
-          reg query "HKLM\SOFTWARE\WOW6432Node\LLVM" /s 2>&1 | head -15 || true
+          echo "B: registry (PowerShell)"
+          powershell -NoProfile -Command 'Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LLVM","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" -Recurse -Force -ErrorAction SilentlyContinue; echo "uninstall keys removed"'
           echo "C: llvm dirs on C:"
           timeout 90 find /c -maxdepth 3 -type d -iname "*llvm*" 2>/dev/null | head -20
           echo "D: wipe"
-          reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" /f 2>&1 || true
-          reg delete "HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" /f 2>&1 || true
           timeout 300 rm -rf "/c/Program Files/LLVM" && echo "dir wiped" || echo "wipe failed"
-          echo "E: choco fresh install"
-          timeout 300 choco install llvm -y --no-progress --force
+          echo "E: choco fresh install (900s budget, Defender scans every file)"
+          timeout 900 choco install llvm -y --no-progress --force; echo "choco_exit=$?"
           export PATH="/c/Program Files/LLVM/bin:$PATH"
           echo "bin entries after: $(ls "/c/Program Files/LLVM/bin" 2>/dev/null | wc -l)"
           llvm_diag
