@@ -48,6 +48,24 @@ jobs:
           cp -f "$x" .
           install_name_tool -change "$x" "@loader_path/$(basename "$x")" faustgen2~.pd_darwin
         done
+        # the bundled dylibs themselves reference absolute Homebrew paths
+        # (libLLVM -> zstd etc.); rewrite those too so the bundle is relocatable
+        for d in *.dylib; do
+          for x in $(otool -L "$d" | sed 's/^ *//' | awk 'NR>1 {print $1}'); do
+            case "$x" in
+              /usr/*|/System/*|@*) continue ;;
+            esac
+            b="$(basename "$x")"
+            [ "$b" = "$d" ] && continue
+            echo "bundling (via $d): $x"
+            [ -f "$b" ] || cp -f "$x" .
+            install_name_tool -change "$x" "@loader_path/$b" "$d"
+          done
+        done
+        # install_name_tool invalidates the arm64 code signature
+        codesign -f -s - *.dylib faustgen2~.pd_darwin
+        echo "=== otool -L faustgen2~.pd_darwin ==="
+        otool -L faustgen2~.pd_darwin
         cd ../..
         cp ../README.md ../LICENSE dist/faustgen2~/
         chmod 0444 dist/faustgen2~/default.dsp
@@ -148,12 +166,14 @@ jobs:
           # The image's LLVM is a tools-only install: no llvm-config, no dev
           # files. Fetch the official full dev distribution instead.
           echo "runner LLVM not usable, installing LLVM from the official dev tarball"
-          curl -fL -o "$RUNNER_TEMP/llvm.tar.xz" "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz"
-          mkdir -p "$RUNNER_TEMP/llvm"
-          tar -xf "$RUNNER_TEMP/llvm.tar.xz" -C "$RUNNER_TEMP/llvm" --strip-components=1
-          rm -f "$RUNNER_TEMP/llvm.tar.xz"
-          export PATH="$RUNNER_TEMP/llvm/bin:$PATH"
-          cmakedir="$(cygpath -m "$RUNNER_TEMP/llvm/lib/cmake/llvm")"
+          TMPD="$(cygpath -u "$RUNNER_TEMP")"
+          # extract with relative paths: bsdtar misparses "D:\..." as host:path
+          curl -fL -o "$TMPD/llvm.tar.xz" "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz"
+          mkdir -p "$TMPD/llvm"
+          cd "$TMPD" && tar -C llvm --strip-components=1 -xf llvm.tar.xz && rm -f llvm.tar.xz
+          cd - >/dev/null
+          export PATH="$TMPD/llvm/bin:$PATH"
+          cmakedir="$(cygpath -m "$TMPD/llvm/lib/cmake/llvm")"
         fi
         echo "llvm-config: $(command -v llvm-config)"
         llvm-config --version
@@ -175,6 +195,9 @@ jobs:
         cmake --install . --prefix dist --config Release
         cp ../README.md ../LICENSE dist/faustgen2~/
         chmod 0444 dist/faustgen2~/default.dsp
+        # evidence: LLVM is linked statically, so no LLVM/third-party DLLs
+        # need to ship alongside the external (same as GRAME's faustgen)
+        objdump -p "dist/faustgen2~/faustgen2~.dll" | grep "DLL Name" || true
 
     - name: upload
       uses: actions/upload-artifact@v4
