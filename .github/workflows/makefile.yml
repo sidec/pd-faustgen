@@ -197,7 +197,7 @@ jobs:
           CPID=$!
           for i in $(seq 1 58); do
             sleep 15
-            cnt=$(find "/c/Program Files/LLVM" -type f 2>/dev/null | wc -l)
+            cnt=$(find "/c/Program Files/LLVM" -type f 2>/dev/null | wc -l || true)
             echo "t=$((i*15))s files=$cnt"
             kill -0 $CPID 2>/dev/null || break
           done
