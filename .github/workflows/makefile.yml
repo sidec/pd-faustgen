@@ -161,18 +161,28 @@ jobs:
       run: |
         set -e
         export PATH="/c/Program Files/LLVM/bin:$PATH"
+        llvm_diag() {
+          echo "which     : $(command -v llvm-config || echo MISSING)"
+          if command -v llvm-config >/dev/null 2>&1; then
+            echo "version   : $(llvm-config --version 2>&1 || echo FAIL)"
+            d="$(llvm-config --cmakedir 2>&1 || true)"
+            echo "cmakedir  : $d"
+            [ -n "$d" ] && ls "$(cygpath -u "$d")" 2>&1 | head -5 || true
+          fi
+          ls "/c/Program Files/LLVM/bin/"llvm-config* 2>&1 || true
+          find "/c/Program Files/LLVM" -name "LLVMConfig.cmake" -print 2>/dev/null | head -3 || true
+        }
         assert_llvm() {
           command -v llvm-config >/dev/null 2>&1 &&
             llvm-config --version >/dev/null 2>&1 &&
             [ -f "$(cygpath -u "$(llvm-config --cmakedir)")/LLVMConfig.cmake" ]
         }
+        llvm_diag
         if ! assert_llvm; then
-          echo "== image LLVM layout =="
-          ls "/c/Program Files/LLVM/bin" | head -50 || true
-          find "/c/Program Files/LLVM" \( -name "llvm-config*" -o -name "LLVMConfig.cmake" \) -print | head -10 || true
           echo "reinstalling LLVM via choco --force"
           choco install llvm -y --no-progress --force
           export PATH="/c/Program Files/LLVM/bin:$PATH"
+          llvm_diag
         fi
         assert_llvm || { echo "LLVM still unusable after choco"; exit 1; }
         echo "llvm-config: $(command -v llvm-config)"
