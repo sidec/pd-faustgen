@@ -13,6 +13,15 @@ include(pd.build/pd.cmake)
 
 project(faustgen2~ C)
 
+## faust/build/CMakeLists.txt overrides CMAKE_CXX_FLAGS_RELEASE without the
+## default -DNDEBUG, so faust's assertions would stay active in release
+## builds and can abort Pd at runtime (e.g. intervalPow's domain check on
+## certain dsps). Compile definitions are unaffected by that override, so
+## enforce NDEBUG here for everything except explicit debug builds.
+if(NOT CMAKE_BUILD_TYPE OR NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-DNDEBUG)
+endif()
+
 ## On Linux "force" the link with stdc++
 if(UNIX AND NOT APPLE)
     set(FAUST_LIBS  "stdc++"  CACHE STRING  "FAUST LIBRARIES" FORCE)

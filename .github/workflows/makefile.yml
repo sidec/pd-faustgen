@@ -174,8 +174,9 @@ jobs:
           mkdir -p "$TMPD/llvm"
           cd "$TMPD" && tar -C llvm --strip-components=1 -xf llvm.tar.xz && rm -f llvm.tar.xz
           cd - >/dev/null
-          # PATH changes don't survive between steps: use GITHUB_PATH
-          echo "$TMPD/llvm/bin" >> "$GITHUB_PATH"
+          # PATH changes don't survive between steps: use GITHUB_PATH, in
+          # Windows form so that native cmake/find_program can use it
+          echo "$(cygpath -m "$TMPD/llvm/bin")" >> "$GITHUB_PATH"
           export PATH="$TMPD/llvm/bin:$PATH"
           cmakedir="$(cygpath -m "$TMPD/llvm/lib/cmake/llvm")"
         fi
