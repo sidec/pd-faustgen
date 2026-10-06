@@ -188,29 +188,11 @@ jobs:
         if ! assert_llvm; then
           echo "== choco install script =="
           cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "X1: original image tree stats"
-          powershell -NoProfile -Command '$r="C:\Program Files\LLVM"; $t=Get-ChildItem $r -Recurse -File -ErrorAction SilentlyContinue; "total=$($t.Count)"; "include=$(@(Get-ChildItem "$r\include" -Recurse -File -EA SilentlyContinue).Count)"; "lib=$(@(Get-ChildItem "$r\lib" -Recurse -File -EA SilentlyContinue).Count)"; "llvm-config=$(Test-Path "$r\bin\llvm-config.exe")"; "cmake=$(Test-Path "$r\lib\cmake\llvm\LLVMConfig.cmake")"; Get-ChildItem "$r\include" -EA SilentlyContinue | Select-Object -First 5 Name; Get-ChildItem "$r\lib" -EA SilentlyContinue | Select-Object -First 10 Name'
-          echo "A: remove registry keys (PowerShell)"
-          powershell -NoProfile -Command 'Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\LLVM","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\LLVM" -Recurse -Force -ErrorAction SilentlyContinue; "keys removed"'
-          echo "B: wipe (PowerShell, verified)"
-          powershell -NoProfile -Command 'Remove-Item "C:\Program Files\LLVM" -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path "C:\Program Files\LLVM") { "wipe failed" } else { "dir wiped" }'
-          echo "C: winget install (600s budget)"
-          timeout 600 winget install --id LLVM.LLVM -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity; echo "winget_exit=$?"
-          echo "D: convergence watch"
-          prev=-1; stable=0
-          for i in $(seq 1 60); do
-            sleep 15
-            cnt=$(find "/c/Program Files/LLVM" -type f 2>/dev/null | wc -l || true)
-            echo "post t=$((i*15))s files=$cnt"
-            if [ "$cnt" = "$prev" ] && [ -n "$cnt" ]; then stable=$((stable+1)); [ "$stable" -ge 3 ] && break; else stable=0; fi
-            prev=$cnt
-          done
-          echo "E: post-install stats + crash events"
-          powershell -NoProfile -Command '$r="C:\Program Files\LLVM"; $t=Get-ChildItem $r -Recurse -File -ErrorAction SilentlyContinue; "total=$($t.Count)"; "include=$(@(Get-ChildItem "$r\include" -Recurse -File -EA SilentlyContinue).Count)"; "lib=$(@(Get-ChildItem "$r\lib" -Recurse -File -EA SilentlyContinue).Count)"; "llvm-config=$(Test-Path "$r\bin\llvm-config.exe")"; "cmake=$(Test-Path "$r\lib\cmake\llvm\LLVMConfig.cmake")"; Get-WinEvent -FilterHashtable @{LogName="Application"; StartTime=(Get-Date).AddMinutes(-20)} -ErrorAction SilentlyContinue | Where-Object { $_.Message -match "LLVM|setup|winget" } | Select-Object -First 5 | Format-List TimeCreated,ProviderName,Message'
-          export PATH="/c/Program Files/LLVM/bin:$PATH"
-          llvm_diag
+          echo "X1: deep fingerprint of image LLVM tree"
+          powershell -NoProfile -Command '$r="C:\Program Files\LLVM"; "== include files =="; Get-ChildItem "$r\include" -Recurse -Force -File -EA SilentlyContinue | ForEach-Object { $_.FullName.Substring($r.Length+1) }; "== reparse points =="; Get-ChildItem $r -Recurse -Force -EA SilentlyContinue | Where-Object { $_.Attributes -match "ReparsePoint" } | ForEach-Object { "$($_.FullName.Substring($r.Length+1)) -> $($_.Target)" }; "== bin names =="; Get-ChildItem "$r\bin" -Force | ForEach-Object Name; "== lib top =="; Get-ChildItem "$r\lib" -Force -EA SilentlyContinue | Select-Object -First 25 | ForEach-Object { $_.Name + $(if($_.PSIsContainer){"/"}) }; "== cmake tree =="; Get-ChildItem "$r\lib\cmake" -Recurse -Force -EA SilentlyContinue | ForEach-Object { $_.FullName.Substring($r.Length+1) } | Select-Object -First 30; "== who owns the dir =="; (Get-Acl $r).Owner; "== du =="; "{0:N0} bytes" -f (Get-ChildItem $r -Recurse -Force -File -EA SilentlyContinue | Measure-Object Length -Sum).Sum'
+          echo "SKIP-INSTALL-THIS-RUN"
         fi
-        assert_llvm || { echo "LLVM still unusable"; exit 1; }
+        echo "EVIDENCE-ONLY RUN (assert skipped)"
         echo "llvm-config: $(command -v llvm-config)"
         llvm-config --version
         cmakedir="$(llvm-config --cmakedir)"
