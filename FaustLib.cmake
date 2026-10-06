@@ -9,7 +9,9 @@ if(DEFINED LLVM_DIR)
 endif()
 
 ## Hardcoded targets for faust
-set(MSVC_STATIC         ON  CACHE STRING  "Use static runtimes with MSVC" FORCE)
+## The pinned LLVM archive (see .github/workflows/makefile.yml) is built with
+## the DLL runtime (/MD); /MT fails LNK2038 against it, so keep faust on /MD.
+set(MSVC_STATIC         OFF CACHE STRING  "Use static runtimes with MSVC" FORCE)
 set(INCLUDE_STATIC      ON  CACHE STRING  "Include static library"        FORCE)
 set(INCLUDE_EXECUTABLE  OFF CACHE STRING  "Include runtime executable"    FORCE)
 set(INCLUDE_DYNAMIC     OFF CACHE STRING  "Include dynamic library"       FORCE)
@@ -35,6 +37,15 @@ add_subdirectory(./faust/build EXCLUDE_FROM_ALL)
 if(MSVC)
     set_property(TARGET staticlib APPEND_STRING PROPERTY COMPILE_FLAGS " /EHsc /D WIN32 -D_SCL_SECURE_NO_WARNINGS")
     set_property(TARGET staticlib APPEND_STRING PROPERTY LINK_FLAGS " /ignore:4099 ")
+endif()
+
+if(WIN32)
+    # faust's staticlib source glob stops at */*.cpp, so generator/interpreter/
+    # is excluded, yet instructions_compiler.cpp always instantiates the
+    # interpreter compiler and references interpreter_dsp; Windows DLL links
+    # must resolve every symbol (Linux allows the undefined refs in a .so).
+    target_sources(staticlib PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/faust/compiler/generator/interpreter/interpreter_dsp_aux.cpp")
 endif()
 
 ## Restore llvm directory

@@ -197,13 +197,65 @@ jobs:
         llvm-config --system-libs | tr -d '\r' || true
         ls "$(cygpath -u "$cmakedir")/../../lib/"xml2* 2>/dev/null || echo "no xml2* in LLVM lib dir"
 
+    - name: pd-import-library
+      run: |
+        set -e
+        # pd.build's vendored pd.lib predates pdgui_vmess; derive an import
+        # library from the official binary matching the pure-data submodule
+        # pin (0.57-0) instead. Keep the URL/sha and the submodule in sync.
+        curl -sSL --retry 3 -o pd.zip https://msp.ucsd.edu/Software/pd-0.57-0.msw.zip
+        echo "1c128583e9bb78c42c88af72e02951d3808af6598a0a68abf0eda61e8d2bc4a3  pd.zip" | sha256sum -c -
+        unzip -o -q pd.zip 'pd-0.57-0/bin/pd.dll'
+        rm pd.zip
+        # export-name list straight from the PE export directory (stdlib only)
+        python - <<'PY'
+        import struct
+        data = open('pd-0.57-0/bin/pd.dll', 'rb').read()
+        e_lfanew = struct.unpack_from('<I', data, 0x3c)[0]
+        coff = e_lfanew + 4
+        nsec, = struct.unpack_from('<H', data, coff + 2)
+        optsz, = struct.unpack_from('<H', data, coff + 16)
+        opt = coff + 20
+        magic, = struct.unpack_from('<H', data, opt)
+        assert magic == 0x20b, hex(magic)
+        exp_rva, = struct.unpack_from('<I', data, opt + 112)
+        so = opt + optsz
+        secs = [struct.unpack_from('<IIII', data, so + i * 40 + 8) for i in range(nsec)]
+        def rva2off(rva):
+            for vsz, va, rsz, raw in secs:
+                if va <= rva < va + max(vsz, rsz):
+                    return raw + (rva - va)
+            raise ValueError(hex(rva))
+        eo = rva2off(exp_rva)
+        nnames, = struct.unpack_from('<I', data, eo + 24)
+        names_off = rva2off(struct.unpack_from('<I', data, eo + 32)[0])
+        names = []
+        for i in range(nnames):
+            nrva, = struct.unpack_from('<I', data, names_off + 4 * i)
+            noff = rva2off(nrva)
+            names.append(data[noff:data.index(b'\0', noff)].decode())
+        assert 'pdgui_vmess' in names and len(names) > 2000
+        open('pd.def', 'w').write('EXPORTS\n' + '\n'.join(names) + '\n')
+        print('pd.def:', len(names), 'exports')
+        PY
+        # lib.exe next to the toolchain VS ships; not on PATH, so locate it
+        vsinst=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | tr -d '\r')
+        test -n "$vsinst"
+        libexe=$(ls "$(cygpath -u "$vsinst")"/VC/Tools/MSVC/*/Hostx64/x64/lib.exe | sort -V | tail -1)
+        test -f "$libexe"
+        mkdir -p pdlibs
+        # MSYS2_ARG_CONV_EXCL stops bash from rewriting /def etc. as paths
+        MSYS2_ARG_CONV_EXCL='*' "$libexe" /def:pd.def /machine:x64 /out:pdlibs/pd.lib
+        test -f pdlibs/pd.lib
+        echo "PD_LIBRARY=$(cygpath -m "$PWD/pdlibs/pd.lib")" >> "$GITHUB_ENV"
+
     - name: make
       run: |
         set -e
         echo version: $version
         echo "llvmdir: $LLVM_DIR"
         mkdir build && cd build
-        cmake .. -A x64 -DLLVM_DIR="$LLVM_DIR" -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF
+        cmake .. -A x64 -DLLVM_DIR="$LLVM_DIR" -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF -DPD_LIBRARY="$PD_LIBRARY"
         cmake --build . --config Release --target faustgen_tilde_project
         cmake --install . --prefix dist --config Release
         cp ../README.md ../LICENSE dist/faustgen2~/
