@@ -4,9 +4,15 @@ on:
     branches: [ faustgen2, testing ]
     tags: [ '*' ]
   workflow_dispatch:
+    inputs:
+      windows_only:
+        description: 'Run only the windows-build job (skip macos/ubuntu/tarball)'
+        type: boolean
+        default: false
 
 jobs:
   macos-build:
+    if: ${{ !inputs.windows_only }}
 
     runs-on: macos-15
 
@@ -80,6 +86,7 @@ jobs:
         retention-days: 7
 
   ubuntu-build:
+    if: ${{ !inputs.windows_only }}
 
     runs-on: ubuntu-24.04
 
@@ -232,6 +239,7 @@ jobs:
         retention-days: 7
 
   tarball:
+    if: ${{ !inputs.windows_only }}
     runs-on: ubuntu-24.04
 
     steps:
