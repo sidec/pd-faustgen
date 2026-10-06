@@ -33,7 +33,7 @@ jobs:
         export LIBRARY_PATH="$(brew --prefix)/lib:$(brew --prefix)/opt/zstd/lib:$(brew --prefix)/opt/ncurses/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
         LLVM_DIR="$(brew --prefix)/opt/llvm/lib/cmake/llvm"
         mkdir build && cd build
-        cmake .. -DLLVM_DIR="$LLVM_DIR"
+        cmake .. -DLLVM_DIR="$LLVM_DIR" -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF
         cmake --build . --config Release --target faustgen_tilde_project
         # staged install into dist
         cmake --install . --prefix dist
@@ -77,7 +77,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config libedit-dev zlib1g-dev libzstd-dev
-        sudo apt-get install -y llvm-dev || sudo apt-get install -y llvm-18-dev
+        sudo apt-get install -y llvm-dev libpolly-18-dev || sudo apt-get install -y llvm-18-dev libpolly-18-dev
 
     - name: locate llvm
       run: |
@@ -100,7 +100,7 @@ jobs:
       run: |
         echo version: $version
         mkdir build && cd build
-        cmake .. -DLLVM_DIR="$LLVM_DIR" -DCMAKE_BUILD_TYPE=Release -DINSTALL_DIR=faustgen2~
+        cmake .. -DLLVM_DIR="$LLVM_DIR" -DCMAKE_BUILD_TYPE=Release -DINSTALL_DIR=faustgen2~ -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF
         cmake --build . --config Release --target faustgen_tilde_project
         # staged install into dist
         cmake --install . --prefix dist
@@ -145,10 +145,15 @@ jobs:
           cmakedir="$(llvm-config --cmakedir)"
         fi
         if [ -z "$cmakedir" ] || [ ! -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake" ]; then
-          echo "runner LLVM not usable (llvm-config: '$(command -v llvm-config || true)', cmakedir: '$cmakedir'), installing via choco"
-          choco install -y llvm || true
-          export PATH="/c/Program Files/LLVM/bin:$PATH"
-          cmakedir="$(llvm-config --cmakedir)"
+          # The image's LLVM is a tools-only install: no llvm-config, no dev
+          # files. Fetch the official full dev distribution instead.
+          echo "runner LLVM not usable, installing LLVM from the official dev tarball"
+          curl -fL -o "$RUNNER_TEMP/llvm.tar.xz" "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz"
+          mkdir -p "$RUNNER_TEMP/llvm"
+          tar -xf "$RUNNER_TEMP/llvm.tar.xz" -C "$RUNNER_TEMP/llvm" --strip-components=1
+          rm -f "$RUNNER_TEMP/llvm.tar.xz"
+          export PATH="$RUNNER_TEMP/llvm/bin:$PATH"
+          cmakedir="$(cygpath -m "$RUNNER_TEMP/llvm/lib/cmake/llvm")"
         fi
         echo "llvm-config: $(command -v llvm-config)"
         llvm-config --version
@@ -156,6 +161,8 @@ jobs:
         # llvm-config prints native Windows paths; test(1) needs the MSYS form
         test -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake"
         echo "LLVM_DIR=$cmakedir" >> $GITHUB_ENV
+        # llvm-config must stay on PATH for the configure step (faust's build uses it)
+        echo "$(dirname "$(command -v llvm-config)")" >> $GITHUB_PATH
 
     - name: make
       run: |
@@ -163,7 +170,7 @@ jobs:
         echo version: $version
         echo "llvmdir: $LLVM_DIR"
         mkdir build && cd build
-        cmake .. -A x64 -DLLVM_DIR="$LLVM_DIR"
+        cmake .. -A x64 -DLLVM_DIR="$LLVM_DIR" -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF
         cmake --build . --config Release --target faustgen_tilde_project
         cmake --install . --prefix dist --config Release
         cp ../README.md ../LICENSE dist/faustgen2~/
