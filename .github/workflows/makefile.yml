@@ -28,6 +28,9 @@ jobs:
       run: |
         echo version: $version
         export PATH="$(brew --prefix)/opt/llvm/bin:$PATH"
+        # Apple clang doesn't search Homebrew's lib dirs for -l flags; LLVM's
+        # system libs (zstd etc.) live there.
+        export LIBRARY_PATH="$(brew --prefix)/lib:$(brew --prefix)/opt/zstd/lib:$(brew --prefix)/opt/ncurses/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
         LLVM_DIR="$(brew --prefix)/opt/llvm/lib/cmake/llvm"
         mkdir build && cd build
         cmake .. -DLLVM_DIR="$LLVM_DIR"
