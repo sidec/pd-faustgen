@@ -6,7 +6,7 @@
 #X obj 31 47 osc~ 220;
 #X msg 49 71 compile;
 #X obj 124 282 print;
-#X obj 31 242 ../external/faustgen~ double, f 16;
+#X obj 31 242 ../external/faustgen2~ double, f 16;
 #X msg 70 95 compileoptions -single;
 #X msg 70 125 compileoptions -double;
 #X msg 70 155 compileoptions -single -double;

@@ -9,7 +9,7 @@
 #X msg 70 95 compileoptions -single;
 #X msg 70 125 compileoptions -double;
 #X msg 70 155 compileoptions -single -double;
-#X obj 31 241 ../external/faustgen~ location, f 16;
+#X obj 31 241 ../external/faustgen2~ location, f 16;
 #X text 172 222 location.dsp must be located in the Pd search path
 , f 23;
 #X connect 0 0 1 0;
