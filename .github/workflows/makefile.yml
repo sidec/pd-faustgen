@@ -159,56 +159,30 @@ jobs:
       run: |
         echo "version=$(git describe --tags)" >> $GITHUB_ENV
 
-    # Assert that the runner's LLVM is actually usable for our build: we need
-    # both llvm-config and LLVMConfig.cmake. The image's install is
-    # tools-only, so fall back to installing LLVM via the image's package
-    # manager (choco) and check again.
+    # LLVM: the runner image's own install is defective (no llvm-config.exe,
+    # no LLVMConfig.cmake; upstream actions/runner-images#14260), and neither
+    # choco nor winget produces a complete tree. Provision instead the pinned
+    # archive that grame-cncm/faust's own Windows CI uses (libfaust.yml),
+    # checksum-verified, per spec build-system "Uses platform-provided LLVM".
 
     - name: prepare
       run: |
         set -e
-        export PATH="/c/Program Files/LLVM/bin:$PATH"
-        llvm_diag() {
-          echo "which     : $(command -v llvm-config || echo MISSING)"
-          if command -v llvm-config >/dev/null 2>&1; then
-            echo "version   : $(llvm-config --version 2>&1 || echo FAIL)"
-            d="$(llvm-config --cmakedir 2>&1 || true)"
-            echo "cmakedir  : $d"
-            [ -n "$d" ] && ls "$(cygpath -u "$d")" 2>&1 | head -5 || true
-          fi
-          ls "/c/Program Files/LLVM/bin/"llvm-config* 2>&1 || true
-          find "/c/Program Files/LLVM" -name "LLVMConfig.cmake" -print 2>/dev/null | head -3 || true
-        }
-        assert_llvm() {
-          command -v llvm-config >/dev/null 2>&1 &&
-            llvm-config --version >/dev/null 2>&1 &&
-            [ -f "$(cygpath -u "$(llvm-config --cmakedir)")/LLVMConfig.cmake" ]
-        }
-        llvm_diag
-        if ! assert_llvm; then
-          echo "== choco install script =="
-          cat /c/ProgramData/chocolatey/lib/llvm/tools/chocolateyinstall.ps1 2>/dev/null || true
-          echo "P1: search VS trees for llvm-config.exe + LLVMConfig.cmake"
-          powershell -NoProfile -Command 'foreach ($root in @("C:\Program Files\Microsoft Visual Studio","C:\Program Files (x86)\Microsoft Visual Studio")) { if (Test-Path $root) { Get-ChildItem $root -Recurse -Force -Filter "llvm-config.exe" -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object FullName; Get-ChildItem $root -Recurse -Force -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object FullName } }' || true
-          echo "P2: VS bundled Clang/LLVM toolset layout"
-          powershell -NoProfile -Command 'Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\Llvm\x64" -Force -ErrorAction SilentlyContinue | ForEach-Object Name; "-- llvm* in bin --"; Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\Llvm\x64\bin" -Force -ErrorAction SilentlyContinue | Where-Object Name -like "llvm*" | Select-Object -First 25 | ForEach-Object Name; "-- cmake? --"; Test-Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\Llvm\x64\lib\cmake\llvm\LLVMConfig.cmake"' || true
-          echo "P3: bounded sweep of Program Files trees"
-          powershell -NoProfile -Command 'foreach ($root in @("C:\Program Files","C:\Program Files (x86)")) { Get-ChildItem $root -Recurse -Force -Include "llvm-config.exe","LLVMConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object FullName }' || true
-          powershell -NoProfile -Command 'if (Test-Path C:\llvm-msi.log) { Select-String -Path C:\llvm-msi.log -Pattern "llvm-config|LLVMConfig.cmake|Core.h" | Select-Object -First 20 | ForEach-Object Line }' 
-        fi
-        echo "EVIDENCE-ONLY RUN (assert skipped)"
-        echo "llvm-config: $(command -v llvm-config)"
-        llvm-config --version
-        cmakedir="$(llvm-config --cmakedir)"
-        echo "cmakedir: $cmakedir"
-        # llvm-config prints native Windows paths; test(1) needs the MSYS form
+        curl -sSL --retry 3 -o llvm.zip https://github.com/grame-cncm/faust/releases/download/2.59.5-llvm/llvm-17.0.6-win11-x86_64.zip
+        echo "ed3a79afecb971ac530a6041f088fa1f0db9c5e0a7f14e9d472a4344e3b0ca75  llvm.zip" | sha256sum -c -
+        command -v 7z >/dev/null || export PATH="/c/Program Files/7-Zip:$PATH"
+        7z x llvm.zip -y >/dev/null
+        rm llvm.zip
+        export PATH="$PWD/llvm/bin:$PATH"
+        # native exes print CRLF through pipes; strip CR for test(1)/GITHUB_ENV
+        echo "llvm-config : $(llvm-config --version | tr -d '\r')"
+        cmakedir="$(llvm-config --cmakedir | tr -d '\r')"
         test -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake"
         echo "LLVM_DIR=$cmakedir" >> $GITHUB_ENV
-        # llvm-config must stay on PATH for the configure step (faust's build
-        # uses it); GITHUB_PATH needs the Windows form so native cmake sees it
-        echo "$(cygpath -m "$(dirname "$(command -v llvm-config)")")" >> "$GITHUB_PATH"
+        # native cmake needs llvm-config's dir as a Windows path on PATH
+        echo "$(cygpath -m "$PWD/llvm/bin")" >> "$GITHUB_PATH"
         # evidence: what faust appends to the link line, and where xml2 lives
-        llvm-config --system-libs || true
+        llvm-config --system-libs | tr -d '\r' || true
         ls "$(cygpath -u "$cmakedir")/../../lib/"xml2* 2>/dev/null || echo "no xml2* in LLVM lib dir"
 
     - name: make
