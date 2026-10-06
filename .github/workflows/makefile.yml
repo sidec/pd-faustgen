@@ -173,6 +173,18 @@ jobs:
         command -v 7z >/dev/null || export PATH="/c/Program Files/7-Zip:$PATH"
         7z x llvm.zip -y >/dev/null
         rm llvm.zip
+        # LLVMExports.cmake hard-errors if any file it imports is absent; the
+        # archive prunes build-time tools (llvm-tblgen, ...). CMake only checks
+        # existence and our build never runs them, so create the missing ones.
+        grep -oE '"\$\{_IMPORT_PREFIX\}[^"]*"' llvm/lib/cmake/llvm/LLVMExports.cmake \
+          | tr -d '"' | sed "s|\${_IMPORT_PREFIX}|$PWD/llvm|" | sort -u \
+          | while IFS= read -r f; do
+              if [ ! -e "$f" ]; then
+                mkdir -p "$(dirname "$f")"
+                touch "$f"
+                echo "stubbed missing import: ${f#$PWD/llvm/}"
+              fi
+            done
         export PATH="$PWD/llvm/bin:$PATH"
         # native exes print CRLF through pipes; strip CR for test(1)/GITHUB_ENV
         echo "llvm-config : $(llvm-config --version | tr -d '\r')"
