@@ -241,9 +241,11 @@ jobs:
         # lib.exe next to the toolchain VS ships; not on PATH, so locate it
         vsinst=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | tr -d '\r')
         test -n "$vsinst"
-        libexe=$(ls "$(cygpath -u "$vsinst")"/VC/Tools/MSVC/*/Hostx64/x64/lib.exe | sort -V | tail -1)
+        libexe=$(ls "$(cygpath -u "$vsinst")"/VC/Tools/MSVC/*/bin/Hostx64/x64/lib.exe | sort -V | tail -1)
         test -f "$libexe"
         mkdir -p pdlibs
+        # lib.exe may need sibling tool DLLs; put its dir on PATH as well
+        export PATH="$(dirname "$libexe"):$PATH"
         # MSYS2_ARG_CONV_EXCL stops bash from rewriting /def etc. as paths
         MSYS2_ARG_CONV_EXCL='*' "$libexe" /def:pd.def /machine:x64 /out:pdlibs/pd.lib
         test -f pdlibs/pd.lib
