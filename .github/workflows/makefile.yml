@@ -202,7 +202,17 @@ jobs:
             kill -0 $CPID 2>/dev/null || break
           done
           wait $CPID; echo "choco_exit=$?"
-          echo "D: verify (PowerShell native)"
+          echo "D: background writers + convergence watch"
+          powershell -NoProfile -Command 'Get-Process | Where-Object { $_.Name -match "setup|llvm|choco|LLVM" } | Format-Table Name,Id,CPU -AutoSize' || true
+          prev=-1; stable=0
+          for i in $(seq 1 80); do
+            sleep 15
+            cnt=$(find "/c/Program Files/LLVM" -type f 2>/dev/null | wc -l || true)
+            echo "post t=$((i*15))s files=$cnt"
+            if [ "$cnt" = "$prev" ] && [ -n "$cnt" ]; then stable=$((stable+1)); [ "$stable" -ge 3 ] && break; else stable=0; fi
+            prev=$cnt
+          done
+          echo "E: verify (PowerShell native)"
           powershell -NoProfile -Command '$b="C:\Program Files\LLVM\bin"; "count=$((Get-ChildItem $b -ErrorAction SilentlyContinue).Count)"; "llvm-config=$(Test-Path "$b\llvm-config.exe")"; "cmake=$(Test-Path "C:\Program Files\LLVM\lib\cmake\llvm\LLVMConfig.cmake")"; Get-ChildItem $b -Filter "llvm-c*" -ErrorAction SilentlyContinue | ForEach-Object Name'
           export PATH="/c/Program Files/LLVM/bin:$PATH"
           llvm_diag
