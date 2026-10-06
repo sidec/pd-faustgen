@@ -176,7 +176,7 @@ jobs:
         # LLVMExports.cmake hard-errors if any file it imports is absent; the
         # archive prunes build-time tools (llvm-tblgen, ...). CMake only checks
         # existence and our build never runs them, so create the missing ones.
-        grep -oE '"\$\{_IMPORT_PREFIX\}[^"]*"' llvm/lib/cmake/llvm/LLVMExports*.cmake \
+        grep -hoE '"\$\{_IMPORT_PREFIX\}[^"]*"' llvm/lib/cmake/llvm/LLVMExports*.cmake \
           | tr -d '"' | sed "s|\${_IMPORT_PREFIX}|$PWD/llvm|" | sort -u \
           | while IFS= read -r f; do
               if [ ! -e "$f" ]; then
