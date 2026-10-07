@@ -3,16 +3,21 @@ on:
   push:
     branches: [ faustgen2, testing ]
     tags: [ '*' ]
-  pull_request:
-    branches: [ faustgen2 ]
+  workflow_dispatch:
+    inputs:
+      windows_only:
+        description: 'Run only the windows-build job (skip macos/ubuntu/tarball)'
+        type: boolean
+        default: false
 
 jobs:
   macos-build:
+    if: ${{ !inputs.windows_only }}
 
-    runs-on: macos-12
+    runs-on: macos-15
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
       with:
         submodules: recursive
         fetch-depth: 0
@@ -23,121 +28,129 @@ jobs:
 
     - name: dependencies
       run: |
-        brew install llvm@14
-        brew link llvm@14
+        brew install llvm
 
     - name: make
       run: |
         echo version: $version
+        export PATH="$(brew --prefix)/opt/llvm/bin:$PATH"
+        # Apple clang doesn't search Homebrew's lib dirs for -l flags; LLVM's
+        # system libs (zstd etc.) live there.
+        export LIBRARY_PATH="$(brew --prefix)/lib:$(brew --prefix)/opt/zstd/lib:$(brew --prefix)/opt/ncurses/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
+        LLVM_DIR="$(brew --prefix)/opt/llvm/lib/cmake/llvm"
         mkdir build && cd build
-        cmake .. && make
+        cmake .. -DLLVM_DIR="$LLVM_DIR" -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF
+        cmake --build . --config Release --target faustgen_tilde_project
         # staged install into dist
         cmake --install . --prefix dist
-        # copy over libLLVM.dylib and fix the loader path of the external
-        llvmdir="$(brew --prefix)/opt/llvm@14/lib"
-        (cd dist/Faustgen2~; for x in $(otool -L faustgen2~.pd_darwin | sed -n 's|.*llvm@14/lib/\(.*\.dylib\).*|\1|p'); do echo "$llvmdir/$x:"; cp $llvmdir/$x .; install_name_tool -change $llvmdir/$x @loader_path/$x faustgen2~.pd_darwin; done)
-        cp ../README.md ../LICENSE dist/faustgen2~
+        # copy over the Homebrew LLVM dylibs and fix the loader paths of the
+        # external so that it doesn't depend on Homebrew at runtime
+        cd dist/faustgen2~
+        for x in $(otool -L faustgen2~.pd_darwin | sed 's/^ *//' | awk 'NR>1 {print $1}'); do
+          case "$x" in
+            /usr/*|/System/*|@*|*faustgen2~.pd_darwin) continue ;;
+          esac
+          echo "bundling: $x"
+          cp -f "$x" .
+          install_name_tool -change "$x" "@loader_path/$(basename "$x")" faustgen2~.pd_darwin
+        done
+        # the bundled dylibs themselves reference absolute Homebrew paths
+        # (libLLVM -> zstd etc.); rewrite those too so the bundle is relocatable
+        for d in *.dylib; do
+          for x in $(otool -L "$d" | sed 's/^ *//' | awk 'NR>1 {print $1}'); do
+            case "$x" in
+              /usr/*|/System/*|@*) continue ;;
+            esac
+            b="$(basename "$x")"
+            [ "$b" = "$d" ] && continue
+            echo "bundling (via $d): $x"
+            [ -f "$b" ] || cp -f "$x" .
+            install_name_tool -change "$x" "@loader_path/$b" "$d"
+          done
+        done
+        # install_name_tool invalidates the arm64 code signature
+        codesign -f -s - *.dylib faustgen2~.pd_darwin
+        echo "=== lipo -archs ==="
+        lipo -archs faustgen2~.pd_darwin
+        echo "=== otool -L faustgen2~.pd_darwin ==="
+        otool -L faustgen2~.pd_darwin
+        cd ../..
+        cp ../README.md ../LICENSE dist/faustgen2~/
         chmod 0444 dist/faustgen2~/default.dsp
 
     - name: upload
-      uses: actions/upload-artifact@v3
-      with:
-        name: pd-faustgen2-${{ env.version }}-macos-x86_64
-        path: build/dist
-        retention-days: 2
-
-  macos-arm-build:
-
-    runs-on: macos-12
-
-    steps:
-    - uses: actions/checkout@v3
-      with:
-        submodules: recursive
-        fetch-depth: 0
-
-    - name: version
-      run: |
-        echo "version=$(git describe --tags)" >> $GITHUB_ENV
-
-    - name: prepare
-      run: |
-        # This is a bit tricky since we want to cross-compile for arm64 on
-        # an x86_64 Big Sur runner using the llvm@14 arm64 homebrew package.
-        # Here is a suitable snapshot of the package that we prepared:
-        curl -L https://github.com/agraef/pd-faustgen/releases/download/llvm-14-homebrew/llvm-14.0.6-homebrew-macos11-arm64.zip -o llvm.zip
-        unzip llvm.zip
-
-    - name: make
-      run: |
-        echo version: $version
-        # we need llvm-config for the static build
-        export PATH=$PWD/llvm/bin:$PATH
-        mkdir build && cd build
-        cmake .. -DLLVM_DIR=./llvm/lib/cmake/llvm -DCMAKE_OSX_ARCHITECTURES="arm64" && make
-        # staged install into dist
-        cmake --install . --prefix dist
-        # copy over libLLVM.dylib and fix the loader path of the external
-        for x in $(otool -L dist/faustgen2~/faustgen2~.pd_darwin | sed -n 's|.*llvm@14/lib/\(.*\.dylib\).*|\1|p'); do echo "../llvm/lib/$x:"; cp ../llvm/lib/$x dist/faustgen2~; install_name_tool -change @@HOMEBREW_PREFIX@@/opt/llvm@14/lib/$x @loader_path/$x dist/faustgen2~/faustgen2~.pd_darwin; done
-        cp ../README.md ../LICENSE dist/faustgen2~
-        chmod 0444 dist/faustgen2~/default.dsp
-
-    - name: upload
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pd-faustgen2-${{ env.version }}-macos-arm64
         path: build/dist
-        retention-days: 2
+        retention-days: 7
 
   ubuntu-build:
+    if: ${{ !inputs.windows_only }}
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
       with:
         submodules: recursive
         fetch-depth: 0
-
-    - name: install dependencies
-      run: sudo apt-get install -y pkg-config libedit-dev
 
     - name: version
       run: |
         echo "version=$(git describe --tags)" >> $GITHUB_ENV
 
-    - name: prepare
+    - name: install dependencies
       run: |
-        curl -o ./llvm.tar.xz https://releases.llvm.org/9.0.0/clang+llvm-9.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz
-        tar xvf ./llvm.tar.xz && mv clang+llvm-9.0.0-x86_64-linux-gnu-ubuntu-18.04 llvm
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libedit-dev zlib1g-dev libzstd-dev
+        sudo apt-get install -y llvm-dev libpolly-18-dev || sudo apt-get install -y llvm-18-dev libpolly-18-dev
+
+    - name: locate llvm
+      run: |
+        set -e
+        LC="$(command -v llvm-config || true)"
+        if [ -z "$LC" ]; then
+          LC="$(ls /usr/bin/llvm-config-* 2>/dev/null | sort -V | tail -1 || true)"
+        fi
+        if [ -z "$LC" ]; then
+          echo "llvm-config not found" >&2; exit 1
+        fi
+        # faust's build looks for an unversioned llvm-config on PATH
+        case "$LC" in
+          */llvm-config) ;;
+          *) sudo ln -sf "$LC" /usr/local/bin/llvm-config ;;
+        esac
+        echo "LLVM_DIR=$($LC --cmakedir)" >> $GITHUB_ENV
 
     - name: make
       run: |
         echo version: $version
         mkdir build && cd build
-        cmake .. -DCMAKE_C_FLAGS=-m64 -DUSE_LLVM_CONFIG=off -DLLVM_DIR=./llvm/lib/cmake/llvm -DCMAKE_BUILD_TYPE=Release -DINSTALL_DIR=faustgen2~ -DCMAKE_INSTALL_PREFIX=/
+        cmake .. -DLLVM_DIR="$LLVM_DIR" -DCMAKE_BUILD_TYPE=Release -DINSTALL_DIR=faustgen2~ -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF
         cmake --build . --config Release --target faustgen_tilde_project
-        make install DESTDIR=$PWD/dist
-        cp ../README.md ../LICENSE dist/faustgen2~
+        # staged install into dist
+        cmake --install . --prefix dist
+        cp ../README.md ../LICENSE dist/faustgen2~/
         chmod 0444 dist/faustgen2~/default.dsp
 
     - name: upload
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pd-faustgen2-${{ env.version }}-ubuntu-x86_64
         path: build/dist
-        retention-days: 2
+        retention-days: 7
 
   windows-build:
 
-    runs-on: windows-2019
+    runs-on: windows-2025
     # We use bash for the entire build since powershell just drives me insane.
     defaults:
       run:
         shell: bash
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
       with:
         submodules: recursive
         fetch-depth: 0
@@ -146,75 +159,103 @@ jobs:
       run: |
         echo "version=$(git describe --tags)" >> $GITHUB_ENV
 
-    # The Windows runner has an LLVM installation in /c/Program Files/LLVM
-    # which is pretty useless since it lacks important development tools.
-    # In particular, we need llvm-config (even with USE_LLVM_CONFIG=off)
-    # for the faust staticlib build to work. So we just get rid of the
-    # runner's LLVM version and move our version in its place.
+    # LLVM: the runner image's own install is defective (no llvm-config.exe,
+    # no LLVMConfig.cmake; upstream actions/runner-images#14260), and neither
+    # choco nor winget produces a complete tree. Provision instead the pinned
+    # archive that grame-cncm/faust's own Windows CI uses (libfaust.yml),
+    # checksum-verified, per spec build-system "Uses platform-provided LLVM".
 
     - name: prepare
       run: |
-        mkdir build && cd build
-        curl -L https://github.com/agraef/pd-faustgen/releases/download/llvm-9.0.0-windows-build/llvm-9.0.0-windows-x64-mt.zip -o llvm.zip
-        7z x llvm.zip
-        rm -rf "/c/Program Files/LLVM"
-        mv llvm "/c/Program Files/LLVM"
-        echo "llvmdir=/c/Program Files/LLVM" >> $GITHUB_ENV
+        set -e
+        curl -sSL --retry 3 -o llvm.zip https://github.com/grame-cncm/faust/releases/download/2.59.5-llvm/llvm-17.0.6-win11-x86_64.zip
+        echo "ed3a79afecb971ac530a6041f088fa1f0db9c5e0a7f14e9d472a4344e3b0ca75  llvm.zip" | sha256sum -c -
+        command -v 7z >/dev/null || export PATH="/c/Program Files/7-Zip:$PATH"
+        7z x llvm.zip -y >/dev/null
+        rm llvm.zip
+        # LLVMExports.cmake hard-errors if any file it imports is absent; the
+        # archive prunes build-time tools (llvm-tblgen, ...). CMake only checks
+        # existence and our build never runs them, so create the missing ones.
+        grep -hoE '"\$\{_IMPORT_PREFIX\}[^"]*"' llvm/lib/cmake/llvm/LLVMExports*.cmake \
+          | tr -d '"' | sed "s|\${_IMPORT_PREFIX}|$PWD/llvm|" | sort -u \
+          | while IFS= read -r f; do
+              if [ ! -e "$f" ]; then
+                mkdir -p "$(dirname "$f")"
+                touch "$f"
+                echo "stubbed missing import: ${f#$PWD/llvm/}"
+              fi
+            done
+        export PATH="$PWD/llvm/bin:$PATH"
+        # native exes print CRLF through pipes; strip CR for test(1)/GITHUB_ENV
+        echo "llvm-config : $(llvm-config --version | tr -d '\r')"
+        cmakedir="$(llvm-config --cmakedir | tr -d '\r')"
+        test -f "$(cygpath -u "$cmakedir")/LLVMConfig.cmake"
+        echo "LLVM_DIR=$cmakedir" >> $GITHUB_ENV
+        # native cmake needs llvm-config's dir as a Windows path on PATH
+        echo "$(cygpath -m "$PWD/llvm/bin")" >> "$GITHUB_PATH"
+        # evidence: what faust appends to the link line, and where xml2 lives
+        llvm-config --system-libs | tr -d '\r' || true
+        ls "$(cygpath -u "$cmakedir")/../../lib/"xml2* 2>/dev/null || echo "no xml2* in LLVM lib dir"
 
     - name: make
       run: |
-        cd build
-        echo "version: $version"
-        echo "llvmdir: $llvmdir"
-        echo "llvm-config: $(which llvm-config)"
-        cmake .. -G "Visual Studio 16 2019" -A x64 -DUSE_LLVM_CONFIG=off -DLLVM_DIR="$llvmdir/lib/cmake/llvm"
-        cmake --build . --config Release
-        cmake --install . --prefix dist
-        cp ../README.md dist/faustgen2~
-        cp ../LICENSE dist/faustgen2~
+        set -e
+        echo version: $version
+        echo "llvmdir: $LLVM_DIR"
+        mkdir build && cd build
+        cmake .. -A x64 -DLLVM_DIR="$LLVM_DIR" -DINCLUDE_LLVM_STATIC_IN_ARCHIVE=OFF
+        cmake --build . --config Release --target faustgen_tilde_project
+        cmake --install . --prefix dist --config Release
+        cp ../README.md ../LICENSE dist/faustgen2~/
         chmod 0444 dist/faustgen2~/default.dsp
+        # evidence: LLVM is linked statically, so no LLVM/third-party DLLs
+        # need to ship alongside the external (same as GRAME's faustgen)
+        objdump -p "dist/faustgen2~/faustgen2~.dll" | grep "DLL Name" || true
 
     - name: upload
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pd-faustgen2-${{ env.version }}-windows-x86_64
         path: build/dist
-        retention-days: 2
+        retention-days: 7
 
   tarball:
-    #if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    if: ${{ !inputs.windows_only }}
+    runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
       with:
         submodules: recursive
         fetch-depth: 0
 
-    - name: make dist
+    - name: version
       run: |
         echo "version=$(git describe --tags)" >> $GITHUB_ENV
+
+    - name: make dist
+      run: |
         ./make-dist.sh
 
     - name: upload
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pd-faustgen2-${{ env.version }}-source
         path: pd-faustgen2-*.tar.gz
-        retention-days: 2
+        retention-days: 7
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    needs: [macos-build, macos-arm-build, windows-build, ubuntu-build, tarball]
+    runs-on: ubuntu-24.04
+    needs: [macos-build, windows-build, ubuntu-build, tarball]
     steps:
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
     - name: ziptie
       run: |
         mkdir dist
         for x in pd-faustgen2-*; do (cd $x && zip -r ../dist/$x.zip *); done
     - name: release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         prerelease: true
         draft: true
