@@ -5,7 +5,7 @@
 #X obj 32 308 dac~ 1 2;
 #X obj 31 47 osc~ 220;
 #X msg 200 136 compile;
-#X obj 31 242 ../external/faustgen~ passive, f 16;
+#X obj 31 242 ../external/faustgen2~ passive, f 16;
 #X msg 51 148 gain1;
 #X msg 122 188 gain2;
 #X obj 124 282 print;

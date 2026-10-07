@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 
 set(CMAKE_SUPPRESS_REGENERATION true)
 set(CMAKE_MACOSX_RPATH Off)
@@ -12,6 +12,15 @@ message(STATUS "Using PD_FLOATSIZE=64: ${PD_FLOATSIZE64}")
 include(pd.build/pd.cmake)
 
 project(faustgen2~ C)
+
+## faust/build/CMakeLists.txt overrides CMAKE_CXX_FLAGS_RELEASE without the
+## default -DNDEBUG, so faust's assertions would stay active in release
+## builds and can abort Pd at runtime (e.g. intervalPow's domain check on
+## certain dsps). Compile definitions are unaffected by that override, so
+## enforce NDEBUG here for everything except explicit debug builds.
+if(NOT CMAKE_BUILD_TYPE OR NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-DNDEBUG)
+endif()
 
 ## On Linux "force" the link with stdc++
 if(UNIX AND NOT APPLE)
@@ -138,7 +147,17 @@ endif()
 ## LLVM_CONFIG_PROG variable.
 if(NOT llvm_libs)
   find_program(LLVM_CONFIG_PROG "llvm-config" DOC "Use the given llvm-config executable" REQUIRED)
-  execute_process(COMMAND ${LLVM_CONFIG_PROG} --libs OUTPUT_VARIABLE llvm_config_libs OUTPUT_STRIP_TRAILING_WHITESPACE)
+  ## Prefer statically linked LLVM so that the external doesn't depend on
+  ## the exact LLVM runtime libraries installed on the user's system
+  ## (distros ship wildly differing LLVM versions, and on macOS Homebrew
+  ## dylibs would each be blocked by Gatekeeper in an unnotarized build).
+  ## On Windows the LLVMConfig-based map above already yields static .libs.
+  if(UNIX)
+    execute_process(COMMAND ${LLVM_CONFIG_PROG} --link-static --libs OUTPUT_VARIABLE llvm_config_libs OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
+  if(NOT llvm_config_libs)
+    execute_process(COMMAND ${LLVM_CONFIG_PROG} --libs OUTPUT_VARIABLE llvm_config_libs OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
   if(NOT llvm_config_libs)
     message(WARNING "Tried to get LLVM libraries from both cmake and llvm-config, but both came up empty (maybe try to set llvm_libs manually)")
   else()
@@ -153,8 +172,18 @@ if(WIN32)
   target_link_libraries(faustgen_tilde_project ws2_32)
 endif()
 
+if(APPLE)
+  ## Don't record unused dylibs (llvm-config's --system-libs lists z3 and
+  ## libxml2 which nothing we link actually references): each recorded
+  ## third-party dylib would be blocked by Gatekeeper, as the build isn't
+  ## notarized. Only genuinely used ones (z, zstd) remain for bundling.
+  set_property(TARGET faustgen_tilde_project APPEND_STRING PROPERTY LINK_FLAGS " -Wl,-dead_strip_dylibs")
+endif()
+
 if(MSVC)
-    set_property(TARGET faustgen_tilde_project APPEND_STRING PROPERTY LINK_FLAGS " /ignore:4099 ")
+    ## faust appends llvm-config --system-libs (e.g. xml2s.lib) to its link
+    ## libraries as bare names, so LLVM's own lib dir must be on LIBPATH.
+    set_property(TARGET faustgen_tilde_project APPEND_STRING PROPERTY LINK_FLAGS " /ignore:4099 /LIBPATH:\"${LLVM_DIR}/../..\"")
 endif()
 
 ## Installation directory. This is relative to CMAKE_INSTALL_PREFIX.

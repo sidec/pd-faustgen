@@ -14,10 +14,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
-// This used to be in s_stuff.h, but not anymore since 0.55.1test1.
-int sys_trytoopenone(const char *dir, const char *name, const char* ext,
-    char *dirresult, char **nameresult, unsigned int size, int bin);
-
 // ag: I'm not sure what this definition is supposed to do, but this will
 // almost certainly cause trouble when compiling against a Pd version that
 // uses double precision t_sample values. Disabled for now, which means that
@@ -397,6 +393,13 @@ static void faustgen_tilde_compile(t_faustgen_tilde *x)
             x->f_dsp_factory  = factory;
             x->f_dsp_instance = instance;
 
+            /* Register after the JIT initializes its lazy static mutexes. */
+            static int exit_cleanup_registered = 0;
+            if (!exit_cleanup_registered) {
+                atexit(deleteAllCDSPFactories);
+                exit_cleanup_registered = 1;
+            }
+
             if (faust_ui_manager_get_polyphony(x->f_ui_manager, &midi, &npoly,
                                                &freq, &gain, &gate)) {
               faust_new_voices(x, npoly);
@@ -494,7 +497,7 @@ static void faustgen_tilde_menu_open(t_faustgen_tilde *x)
     if (nw_gui_vmess)
       nw_gui_vmess("open_textfile", "s", pathname);
     else
-      sys_vgui("::pd_menucommands::menu_openfile {%s}\n", pathname);
+      pdgui_vmess("::pd_menucommands::menu_openfile", "s", pathname);
   } else {
     pd_error(x, "faustgen2~: no FAUST DSP file defined");
   }
@@ -1173,7 +1176,7 @@ static t_int *faustgen_tilde_perform_single(t_int *w)
       t_outlet *out = x->f_midiout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
       faust_ui_manager_midiout(x->f_ui_manager, x->f_midichan, x->f_midirecv, out);
     }
-    if (clock_getsystime() >= x->f_next_tick) {
+    if (clock_getlogicaltime() >= x->f_next_tick) {
       if (x->f_oscout || x->f_oscrecv) {
         t_outlet *out = x->f_oscout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
         faust_ui_manager_oscout(x->f_ui_manager, x->f_oscrecv, out);
@@ -1249,7 +1252,7 @@ static t_int *faustgen_tilde_perform_double(t_int *w)
       t_outlet *out = x->f_midiout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
       faust_ui_manager_midiout(x->f_ui_manager, x->f_midichan, x->f_midirecv, out);
     }
-    if (clock_getsystime() >= x->f_next_tick) {
+    if (clock_getlogicaltime() >= x->f_next_tick) {
       if (x->f_oscout || x->f_oscrecv) {
         t_outlet *out = x->f_oscout?faust_io_manager_get_extra_output(x->f_io_manager):NULL;
         faust_ui_manager_oscout(x->f_ui_manager, x->f_oscrecv, out);
@@ -1455,13 +1458,24 @@ static t_symbol *real_dsp_name(t_symbol *s)
   return gensym(buf);
 }
 
+// Loader-created classes are registered under the dsp name, while the
+// external itself is registered under "faustgen2~" -- possibly written
+// with a directory prefix (e.g. "../external/faustgen2~"), in which case
+// the dsp name still comes from the first creation argument.
+static bool is_faustgen_classname(const char *n)
+{
+  static const char cls[] = "faustgen2~";
+  size_t l = strlen(n);
+  return l >= sizeof(cls) - 1 && strcmp(n + l - (sizeof(cls) - 1), cls) == 0;
+}
+
 static void *faustgen_tilde_new(t_symbol* s, int argc, t_atom* argv)
 {
     t_faustgen_tilde* x = (t_faustgen_tilde *)pd_new(faustgen_tilde_class);
     if(x)
     {
         char default_file[MAXPDSTRING];
-        bool is_loader_obj = strcmp(s->s_name, "faustgen2~") != 0;
+        bool is_loader_obj = !is_faustgen_classname(s->s_name);
         x->f_canvas = canvas_getcurrent();
         sprintf(default_file, "%s/default", class_gethelpdir(faustgen_tilde_class));
         x->f_dsp_factory    = NULL;
@@ -1649,8 +1663,8 @@ static int faustgen_loader_pathwise
   // We allow a ~ to be tacked on to the dsp name, so compute the real name of
   // the dsp file here.
   t_symbol *s = real_dsp_name(gensym(name));
-  fd = sys_trytoopenone(path, s->s_name, ".dsp",
-                        dirbuf, &ptr, MAXPDSTRING, 1);
+  fd = open_via_path(path, s->s_name, ".dsp",
+                     dirbuf, &ptr, MAXPDSTRING, 1);
   if (fd >= 0) {
     // the actual loading, compiling etc. is done in the class setup
     sys_close(fd);
