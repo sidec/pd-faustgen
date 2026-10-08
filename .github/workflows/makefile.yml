@@ -290,7 +290,8 @@ jobs:
       with:
         fromTag: ${{ steps.prev.outputs.tag }}
         toTag: ${{ github.ref_name }}
-        output: CHANGELOG.md
+        mode: HYBRID
+        outputFile: CHANGELOG.md
     - name: changelog fallback
       if: steps.gate.outputs.semver == 'true'
       run: |
