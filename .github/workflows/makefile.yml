@@ -248,15 +248,64 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     needs: [macos-build, windows-build, ubuntu-build, tarball]
+    permissions:
+      contents: write
+      pull-requests: read
     steps:
+    - name: semver gate
+      id: gate
+      run: |
+        # Only X.Y.Z or X.Y.Z-<pre> tags release; any other tag skips
+        # every remaining step (builds still ran via needs:).
+        if [[ "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+          echo "semver=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "semver=false" >> "$GITHUB_OUTPUT"
+          echo "tag '$GITHUB_REF_NAME' is not semver; release skipped"
+        fi
+    - uses: actions/checkout@v5
+      if: steps.gate.outputs.semver == 'true'
+      with:
+        fetch-depth: 0
     - uses: actions/download-artifact@v4
+      if: steps.gate.outputs.semver == 'true'
     - name: ziptie
+      if: steps.gate.outputs.semver == 'true'
       run: |
         mkdir dist
         for x in pd-faustgen2-*; do (cd $x && zip -r ../dist/$x.zip *); done
+    - name: checksums
+      if: steps.gate.outputs.semver == 'true'
+      run: cd dist && sha256sum *.zip > SHA256SUMS.txt
+    - name: previous tag
+      if: steps.gate.outputs.semver == 'true'
+      id: prev
+      run: |
+        prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" --match '[0-9]*' 2>/dev/null || true)
+        echo "tag=$prev" >> "$GITHUB_OUTPUT"
+        echo "previous semver tag: ${prev:-<none>}"
+    - name: changelog
+      if: steps.gate.outputs.semver == 'true'
+      uses: mikepenz/release-changelog-builder-action@v6
+      with:
+        fromTag: ${{ steps.prev.outputs.tag }}
+        toTag: ${{ github.ref_name }}
+        output: CHANGELOG.md
+    - name: changelog fallback
+      if: steps.gate.outputs.semver == 'true'
+      run: |
+        # The builder leans on PRs; this repo's history is direct pushes.
+        # If it produced nothing, fall back to a plain commit log.
+        if ! test -s CHANGELOG.md; then
+          from="${{ steps.prev.outputs.tag }}"
+          git log --pretty='- %s (%h)' "${from:+$from..}${GITHUB_REF_NAME}" > CHANGELOG.md
+        fi
+        head -1 CHANGELOG.md
     - name: release
+      if: steps.gate.outputs.semver == 'true'
       uses: softprops/action-gh-release@v2
       with:
         prerelease: true
         draft: true
-        files: dist/*.zip
+        body_path: CHANGELOG.md
+        files: dist/*
