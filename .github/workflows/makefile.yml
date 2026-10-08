@@ -79,7 +79,7 @@ jobs:
         chmod 0444 dist/faustgen2~/default.dsp
 
     - name: upload
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pd-faustgen2-${{ env.version }}-macos-arm64
         path: build/dist
@@ -135,7 +135,7 @@ jobs:
         chmod 0444 dist/faustgen2~/default.dsp
 
     - name: upload
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pd-faustgen2-${{ env.version }}-ubuntu-x86_64
         path: build/dist
@@ -213,7 +213,7 @@ jobs:
         objdump -p "dist/faustgen2~/faustgen2~.dll" | grep "DLL Name" || true
 
     - name: upload
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pd-faustgen2-${{ env.version }}-windows-x86_64
         path: build/dist
@@ -238,7 +238,7 @@ jobs:
         ./make-dist.sh
 
     - name: upload
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pd-faustgen2-${{ env.version }}-source
         path: pd-faustgen2-*.tar.gz
@@ -267,7 +267,7 @@ jobs:
       if: steps.gate.outputs.semver == 'true'
       with:
         fetch-depth: 0
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       if: steps.gate.outputs.semver == 'true'
     - name: ziptie
       if: steps.gate.outputs.semver == 'true'
@@ -304,7 +304,7 @@ jobs:
         head -1 CHANGELOG.md
     - name: release
       if: steps.gate.outputs.semver == 'true'
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         prerelease: true
         draft: true
